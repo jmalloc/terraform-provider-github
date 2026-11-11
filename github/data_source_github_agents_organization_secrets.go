@@ -11,7 +11,7 @@ import (
 func dataSourceGithubAgentsOrganizationSecrets() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceGithubAgentsOrganizationSecretsRead,
-		Description: "Lists organization agent secret metadata without revealing secret values.",
+		Description: "Data source to list organization agent secret metadata without revealing secret values.",
 		Schema: map[string]*schema.Schema{
 			"secrets": {
 				Type:        schema.TypeList,
@@ -47,17 +47,20 @@ func dataSourceGithubAgentsOrganizationSecrets() *schema.Resource {
 }
 
 func dataSourceGithubAgentsOrganizationSecretsRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	secrets := []map[string]string{}
-	for secret, err := range meta.v3client.Agents.ListOrgSecretsIter(ctx, meta.name, &github.ListOptions{PerPage: meta.maxPerPage}) {
+	for secret, err := range client.Agents.ListOrgSecretsIter(ctx, owner, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {
 			return diag.FromErr(err)
 		}
 		secrets = append(secrets, map[string]string{"name": secret.Name, "visibility": secret.Visibility, "created_at": secret.CreatedAt.String(), "updated_at": secret.UpdatedAt.String()})
 	}
-	d.SetId(meta.name)
+	d.SetId(owner)
 	return diag.FromErr(d.Set("secrets", secrets))
 }

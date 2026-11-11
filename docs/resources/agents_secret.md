@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_secret (Resource) - GitHub"
 description: |-
-  Manages an agent secret for a GitHub repository.
+  Resource to manage an agent secret for a GitHub repository.
 ---
 
 # github_agents_secret (Resource)
 
-Manages an agent secret for a GitHub repository.
+Resource to manage an agent secret for a GitHub repository.
 
 This resource manages [agent secrets](https://docs.github.com/en/rest/agents/secrets), separately from Actions secrets and the `copilot` Actions environment.
 

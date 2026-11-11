@@ -57,7 +57,7 @@ func TestAgentsOrganizationSecretRotation(t *testing.T) {
 	meta := &Owner{name: "test", IsOrganization: true, maxPerPage: 100, v3client: mustCreateTestGitHubClient(t, server.URL)}
 	d := schema.TestResourceDataRaw(t, resourceGithubAgentsOrganizationSecret().Schema, map[string]any{"secret_name": "TEST", "visibility": "selected", "value_encrypted": "c2VjcmV0", "key_id": "key"})
 	d.SetId("TEST")
-	if diagnostics := resourceGithubAgentsOrganizationSecretCreateOrUpdate(t.Context(), d, meta); diagnostics.HasError() {
+	if diagnostics := resourceGithubAgentsOrganizationSecretUpdate(t.Context(), d, meta); diagnostics.HasError() {
 		t.Fatal(diagnostics)
 	}
 	observedIDs, _ := d.Get("selected_repository_ids").(*schema.Set)
@@ -147,7 +147,7 @@ func TestAgentsOrganizationSecretRotationAccessError(t *testing.T) {
 	meta := &Owner{name: "test", IsOrganization: true, maxPerPage: 100, v3client: mustCreateTestGitHubClient(t, server.URL)}
 	d := schema.TestResourceDataRaw(t, resourceGithubAgentsOrganizationSecret().Schema, map[string]any{"secret_name": "TEST", "visibility": "selected", "value_encrypted": "c2VjcmV0", "key_id": "key"})
 	d.SetId("TEST")
-	if diagnostics := resourceGithubAgentsOrganizationSecretCreateOrUpdate(t.Context(), d, meta); !diagnostics.HasError() {
+	if diagnostics := resourceGithubAgentsOrganizationSecretUpdate(t.Context(), d, meta); !diagnostics.HasError() {
 		t.Fatal("rotation ignored repository access lookup failure")
 	}
 }

@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_organization_secret (Resource) - GitHub"
 description: |-
-  Manages an agent secret for a GitHub organization. Repository access is managed separately.
+  Resource to manage an agent secret for a GitHub organization. Repository access is managed separately.
 ---
 
 # github_agents_organization_secret (Resource)
 
-Manages an agent secret for a GitHub organization. Repository access is managed separately.
+Resource to manage an agent secret for a GitHub organization. Repository access is managed separately.
 
 Fine-grained personal access tokens and GitHub Apps require organization **Agent secrets: write** permission. Classic tokens require `admin:org` and, for private repositories, `repo`.
 

@@ -18,7 +18,7 @@ func resourceGithubAgentsOrganizationSecretRepository() *schema.Resource {
 		ReadContext:   resourceGithubAgentsOrganizationSecretRepositoryRead,
 		DeleteContext: resourceGithubAgentsOrganizationSecretRepositoryDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsOrganizationSecretRepositoryImport},
-		Description:   "Manages one repository's access to an organization agent secret. Requires selected visibility.",
+		Description:   "Resource to manage one repository's access to an organization agent secret. Requires selected visibility.",
 		Schema: map[string]*schema.Schema{
 			"secret_name": {
 				Type:             schema.TypeString,
@@ -39,13 +39,16 @@ func resourceGithubAgentsOrganizationSecretRepository() *schema.Resource {
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoryCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
 	id, _ := d.Get("repository_id").(int)
-	if _, err := meta.v3client.Agents.AddSelectedRepoToOrgSecret(ctx, meta.name, name, int64(id)); err != nil {
+	if _, err := client.Agents.AddSelectedRepoToOrgSecret(ctx, owner, name, int64(id)); err != nil {
 		return diag.FromErr(err)
 	}
 	resourceID, err := buildID(name, strconv.Itoa(id))
@@ -57,13 +60,16 @@ func resourceGithubAgentsOrganizationSecretRepositoryCreate(ctx context.Context,
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoryRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
 	id, _ := d.Get("repository_id").(int)
-	for repo, err := range meta.v3client.Agents.ListSelectedReposForOrgSecretIter(ctx, meta.name, name, &github.ListOptions{PerPage: meta.maxPerPage}) {
+	for repo, err := range client.Agents.ListSelectedReposForOrgSecretIter(ctx, owner, name, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {
 			if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 				d.SetId("")
@@ -80,13 +86,16 @@ func resourceGithubAgentsOrganizationSecretRepositoryRead(ctx context.Context, d
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoryDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
 	id, _ := d.Get("repository_id").(int)
-	_, err := meta.v3client.Agents.RemoveSelectedRepoFromOrgSecret(ctx, meta.name, name, int64(id))
+	_, err := client.Agents.RemoveSelectedRepoFromOrgSecret(ctx, owner, name, int64(id))
 	return diag.FromErr(agentSecretAccessDeleteError(ctx, meta, name, err))
 }
 

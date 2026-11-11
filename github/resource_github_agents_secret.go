@@ -21,7 +21,7 @@ func resourceGithubAgentsSecret() *schema.Resource {
 		DeleteContext: resourceGithubAgentsSecretDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsSecretImport},
 		CustomizeDiff: customdiff.All(diffRepository, diffSecret),
-		Description:   "Manages an agent secret for a GitHub repository.",
+		Description:   "Resource to manage an agent secret for a GitHub repository.",
 		Schema: map[string]*schema.Schema{
 			"repository": {
 				Type:        schema.TypeString,
@@ -84,52 +84,100 @@ func resourceGithubAgentsSecret() *schema.Resource {
 
 func resourceGithubAgentsSecretCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
+	client := meta.v3client
+	owner := meta.name
+
 	repository, _ := d.Get("repository").(string)
-	repo, _, err := meta.v3client.Repositories.Get(ctx, meta.name, repository)
+	name, _ := d.Get("secret_name").(string)
+
+	repo, _, err := client.Repositories.Get(ctx, owner, repository)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("repository_id", int(repo.GetID())); err != nil {
-		return diag.FromErr(err)
-	}
-	return resourceGithubAgentsSecretUpdate(ctx, d, m)
-}
 
-func resourceGithubAgentsSecretUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	meta, _ := m.(*Owner)
-	repository, _ := d.Get("repository").(string)
-	name, _ := d.Get("secret_name").(string)
 	request, err := agentSecretValue(ctx, d, meta, repository)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if _, err := meta.v3client.Agents.CreateOrUpdateRepoSecret(ctx, meta.name, repository, name, request); err != nil {
+
+	if _, err := client.Agents.CreateOrUpdateRepoSecret(ctx, owner, repository, name, request); err != nil {
 		return diag.FromErr(err)
 	}
+
 	id, err := buildID(repository, name)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 	d.SetId(id)
+
+	if err := d.Set("repository_id", int(repo.GetID())); err != nil {
+		return diag.FromErr(err)
+	}
 	if err := d.Set("key_id", request.KeyID); err != nil {
 		return diag.FromErr(err)
 	}
+
 	// PUT returns no metadata, so fetch the timestamp baseline for drift detection.
 	secret, err := retryUntilResourceFound(ctx, func() (*github.Secret, error) {
-		secret, _, err := meta.v3client.Agents.GetRepoSecret(ctx, meta.name, repository, name)
+		secret, _, err := client.Agents.GetRepoSecret(ctx, owner, repository, name)
 		return secret, err
 	}, nil)
 	if err != nil {
 		return diag.FromErr(err)
 	}
+
+	return diag.FromErr(setAgentSecretTimestamps(d, secret, true))
+}
+
+func resourceGithubAgentsSecretUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+	meta, _ := m.(*Owner)
+	client := meta.v3client
+	owner := meta.name
+
+	repository, _ := d.Get("repository").(string)
+	name, _ := d.Get("secret_name").(string)
+
+	request, err := agentSecretValue(ctx, d, meta, repository)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	if _, err := client.Agents.CreateOrUpdateRepoSecret(ctx, owner, repository, name, request); err != nil {
+		return diag.FromErr(err)
+	}
+
+	// Rebuild the ID in case the repository was renamed.
+	id, err := buildID(repository, name)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	d.SetId(id)
+
+	if err := d.Set("key_id", request.KeyID); err != nil {
+		return diag.FromErr(err)
+	}
+
+	// PUT returns no metadata, so fetch the timestamp baseline for drift detection.
+	secret, err := retryUntilResourceFound(ctx, func() (*github.Secret, error) {
+		secret, _, err := client.Agents.GetRepoSecret(ctx, owner, repository, name)
+		return secret, err
+	}, nil)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
 	return diag.FromErr(setAgentSecretTimestamps(d, secret, true))
 }
 
 func resourceGithubAgentsSecretRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
+	client := meta.v3client
+	owner := meta.name
+
 	repository, _ := d.Get("repository").(string)
 	name, _ := d.Get("secret_name").(string)
-	secret, _, err := meta.v3client.Agents.GetRepoSecret(ctx, meta.name, repository, name)
+
+	secret, _, err := client.Agents.GetRepoSecret(ctx, owner, repository, name)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			tflog.Info(ctx, "Removing agent secret from state because it no longer exists", map[string]any{"repository": repository, "secret_name": name})
@@ -148,9 +196,13 @@ func resourceGithubAgentsSecretRead(ctx context.Context, d *schema.ResourceData,
 
 func resourceGithubAgentsSecretDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
+	client := meta.v3client
+	owner := meta.name
+
 	repository, _ := d.Get("repository").(string)
 	name, _ := d.Get("secret_name").(string)
-	_, err := meta.v3client.Agents.DeleteRepoSecret(ctx, meta.name, repository, name)
+
+	_, err := client.Agents.DeleteRepoSecret(ctx, owner, repository, name)
 	if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 		return nil
 	}
@@ -163,7 +215,10 @@ func resourceGithubAgentsSecretImport(ctx context.Context, d *schema.ResourceDat
 		return nil, err
 	}
 	meta, _ := m.(*Owner)
-	repo, _, err := meta.v3client.Repositories.Get(ctx, meta.name, repository)
+	client := meta.v3client
+	owner := meta.name
+
+	repo, _, err := client.Repositories.Get(ctx, owner, repository)
 	if err != nil {
 		return nil, err
 	}

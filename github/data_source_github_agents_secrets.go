@@ -11,7 +11,7 @@ import (
 func dataSourceGithubAgentsSecrets() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceGithubAgentsSecretsRead,
-		Description: "Lists repository agent secret metadata without revealing secret values.",
+		Description: "Data source to list repository agent secret metadata without revealing secret values.",
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:         schema.TypeString,
@@ -55,7 +55,9 @@ func dataSourceGithubAgentsSecrets() *schema.Resource {
 
 func dataSourceGithubAgentsSecretsRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
+	client := meta.v3client
 	owner := meta.name
+
 	repository, _ := d.Get("name").(string)
 	if fullName, ok := d.GetOk("full_name"); ok {
 		var err error
@@ -66,7 +68,7 @@ func dataSourceGithubAgentsSecretsRead(ctx context.Context, d *schema.ResourceDa
 		}
 	}
 	secrets := []map[string]string{}
-	for secret, err := range meta.v3client.Agents.ListRepoSecretsIter(ctx, owner, repository, &github.ListOptions{PerPage: meta.maxPerPage}) {
+	for secret, err := range client.Agents.ListRepoSecretsIter(ctx, owner, repository, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {
 			return diag.FromErr(err)
 		}

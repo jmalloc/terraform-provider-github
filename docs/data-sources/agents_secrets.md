@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_secrets (Data Source) - GitHub"
 description: |-
-  Lists repository agent secret metadata without revealing secret values.
+  Data source to list repository agent secret metadata without revealing secret values.
 ---
 
 # github_agents_secrets (Data Source)
 
-Lists repository agent secret metadata without revealing secret values.
+Data source to list repository agent secret metadata without revealing secret values.
 
 Requires repository **Agent secrets: read** permission for fine-grained tokens or GitHub Apps. Specify either `name` within the provider's owner or `full_name` in `owner/repository` format. This lists repository secrets, not organization secrets shared with the repository.
 

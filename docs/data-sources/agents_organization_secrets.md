@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_organization_secrets (Data Source) - GitHub"
 description: |-
-  Lists organization agent secret metadata without revealing secret values.
+  Data source to list organization agent secret metadata without revealing secret values.
 ---
 
 # github_agents_organization_secrets (Data Source)
 
-Lists organization agent secret metadata without revealing secret values.
+Data source to list organization agent secret metadata without revealing secret values.
 
 Requires organization **Agent secrets: read** permission for fine-grained tokens or GitHub Apps. Uses the organization configured as the provider's owner.
 

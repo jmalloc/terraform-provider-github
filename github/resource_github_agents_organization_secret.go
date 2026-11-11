@@ -14,13 +14,13 @@ import (
 
 func resourceGithubAgentsOrganizationSecret() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceGithubAgentsOrganizationSecretCreateOrUpdate,
+		CreateContext: resourceGithubAgentsOrganizationSecretCreate,
 		ReadContext:   resourceGithubAgentsOrganizationSecretRead,
-		UpdateContext: resourceGithubAgentsOrganizationSecretCreateOrUpdate,
+		UpdateContext: resourceGithubAgentsOrganizationSecretUpdate,
 		DeleteContext: resourceGithubAgentsOrganizationSecretDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsOrganizationSecretImport},
 		CustomizeDiff: diffSecret,
-		Description:   "Manages an agent secret for a GitHub organization. Repository access is managed separately.",
+		Description:   "Resource to manage an agent secret for a GitHub organization. Repository access is managed separately.",
 		Schema: map[string]*schema.Schema{
 			"secret_name": {
 				Type:             schema.TypeString,
@@ -86,20 +86,64 @@ func resourceGithubAgentsOrganizationSecret() *schema.Resource {
 	}
 }
 
-func resourceGithubAgentsOrganizationSecretCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
+func resourceGithubAgentsOrganizationSecretCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
+	visibility, _ := d.Get("visibility").(string)
+
 	value, err := agentSecretValue(ctx, d, meta, "")
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	visibility, _ := d.Get("visibility").(string)
+
 	request := github.SecretOrgRequest{KeyID: value.KeyID, EncryptedValue: value.EncryptedValue, Visibility: visibility}
-	if d.Id() != "" && visibility == "selected" {
-		secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
+	if _, err := client.Agents.CreateOrUpdateOrgSecret(ctx, owner, name, request); err != nil {
+		return diag.FromErr(err)
+	}
+
+	d.SetId(name)
+
+	if err := d.Set("key_id", value.KeyID); err != nil {
+		return diag.FromErr(err)
+	}
+
+	// PUT returns no metadata, so fetch the timestamp baseline for drift detection.
+	secret, err := retryUntilResourceFound(ctx, func() (*github.Secret, error) {
+		secret, _, err := client.Agents.GetOrgSecret(ctx, owner, name)
+		return secret, err
+	}, nil)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	return diag.FromErr(setAgentOrganizationSecretMetadata(ctx, d, meta, secret, true))
+}
+
+func resourceGithubAgentsOrganizationSecretUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
+	name, _ := d.Get("secret_name").(string)
+	visibility, _ := d.Get("visibility").(string)
+
+	value, err := agentSecretValue(ctx, d, meta, "")
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	request := github.SecretOrgRequest{KeyID: value.KeyID, EncryptedValue: value.EncryptedValue, Visibility: visibility}
+	if visibility == "selected" {
+		secret, _, err := client.Agents.GetOrgSecret(ctx, owner, name)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -113,30 +157,38 @@ func resourceGithubAgentsOrganizationSecretCreateOrUpdate(ctx context.Context, d
 			request.SelectedRepositoryIDs = ids
 		}
 	}
-	if _, err := meta.v3client.Agents.CreateOrUpdateOrgSecret(ctx, meta.name, name, request); err != nil {
+
+	if _, err := client.Agents.CreateOrUpdateOrgSecret(ctx, owner, name, request); err != nil {
 		return diag.FromErr(err)
 	}
-	d.SetId(name)
+
 	if err := d.Set("key_id", value.KeyID); err != nil {
 		return diag.FromErr(err)
 	}
+
+	// PUT returns no metadata, so fetch the timestamp baseline for drift detection.
 	secret, err := retryUntilResourceFound(ctx, func() (*github.Secret, error) {
-		secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
+		secret, _, err := client.Agents.GetOrgSecret(ctx, owner, name)
 		return secret, err
 	}, nil)
 	if err != nil {
 		return diag.FromErr(err)
 	}
+
 	return diag.FromErr(setAgentOrganizationSecretMetadata(ctx, d, meta, secret, true))
 }
 
 func resourceGithubAgentsOrganizationSecretRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
-	secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
+
+	secret, _, err := client.Agents.GetOrgSecret(ctx, owner, name)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			tflog.Info(ctx, "Removing organization agent secret from state because it no longer exists", map[string]any{"secret_name": d.Id()})
@@ -187,12 +239,16 @@ func agentOrganizationSecretRepositoryIDs(ctx context.Context, meta *Owner, name
 }
 
 func resourceGithubAgentsOrganizationSecretDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
-	_, err := meta.v3client.Agents.DeleteOrgSecret(ctx, meta.name, name)
+
+	_, err := client.Agents.DeleteOrgSecret(ctx, owner, name)
 	if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 		return nil
 	}
