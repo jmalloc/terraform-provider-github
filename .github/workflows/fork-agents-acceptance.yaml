@@ -1,0 +1,150 @@
+# Fork-only workflow (jmalloc/terraform-provider-github). Not intended for upstream.
+#
+# Runs only the agent secrets acceptance tests against the fork's test org, so that
+# results aren't drowned out by rate limiting from the full suite. It mirrors the
+# "Test (organization)" job in acceptance-tests.yaml: same actions, same App auth,
+# same environment variables.
+#
+# workflow_run always uses this file from the default branch, so it can test PR
+# branches without the workflow ever appearing on those branches.
+name: Fork - Agents Acceptance Tests
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or SHA to test
+        required: true
+        default: release-v-agent-secrets
+
+# One run at a time across the whole repo. Every run starts by sweeping tf-acc-test-*
+# resources from the shared test org, which would destroy another run's fixtures.
+concurrency:
+  group: fork-agents-acctest-org
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  test:
+    name: Agents acceptance (organization)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       (startsWith(github.event.workflow_run.head_branch, 'conventions/') ||
+        github.event.workflow_run.head_branch == 'release-v-agent-secrets'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      STATUS_CONTEXT: fork / agents acceptance
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.ref }}
+          # Same-repo branches only (enforced by the job condition above).
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
+
+      - name: Resolve commit
+        id: commit
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Mark pending
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state=pending -f context="${STATUS_CONTEXT}" \
+            -f target_url="${RUN_URL}" -f description="Agents acceptance tests running"
+
+      - name: Set-up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: latest
+          terraform_wrapper: false
+
+      - name: Terraform lookup
+        id: tf
+        run: |
+          set -euo pipefail
+
+          {
+            echo "version=$(terraform version -json | jq --raw-output '.terraform_version')"
+            echo "path=$(command -v terraform || true)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Run tests
+        id: tests
+        env:
+          TF_ACC_PROVIDER_NAMESPACE: "integrations"
+          TF_ACC_TERRAFORM_VERSION: ${{ steps.tf.outputs.version }}
+          TF_ACC_TERRAFORM_PATH: ${{ steps.tf.outputs.path }}
+          TF_ACC: "1"
+          TF_LOG: WARN
+          GITHUB_AUTH_MODE: app
+          GITHUB_APP_ID: ${{ vars.GH_TEST_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ vars.GH_TEST_APP_INSTALLATION_ID }}
+          GITHUB_APP_PEM_FILE: ${{ secrets.GH_TEST_APP_PEM }}
+          GITHUB_TOKEN: ""
+          GITHUB_BASE_URL: https://api.github.com/
+          GITHUB_OWNER: ${{ vars.GH_TEST_ORG_NAME }}
+          GITHUB_ENTERPRISE_SLUG: ""
+          GITHUB_LEGACY_CLIENT: "false"
+          GH_TEST_AUTH_MODE: organization
+          GH_TEST_ORG_USER1: ${{ vars.GH_TEST_ORG_USER1 }}
+          GH_TEST_ORG_USER2: ${{ vars.GH_TEST_ORG_USER2 }}
+          GH_TEST_ORG_USER3: ${{ vars.GH_TEST_ORG_USER3 }}
+          GH_TEST_ORG_APP_INSTALLATION_ID: ${{ vars.GH_TEST_ORG_APP_INSTALLATION_ID }}
+          GH_TEST_ADVANCED_SECURITY: ${{ vars.GH_TEST_ADVANCED_SECURITY || 'false' }}
+        run: |
+          set -euo pipefail
+
+          go test ./github -v -sweep=all
+
+          go run gotest.tools/gotestsum@latest --format testname --jsonfile "${RUNNER_TEMP}/results.json" -- \
+            -run '^(TestAccGithubAgents|TestAccDataSourceGithubAgents)' ./github -v -timeout 60m -count=1
+
+          # A -run pattern that matches nothing passes silently; fail instead.
+          ran="$(jq -s '[.[] | select(.Test != null and (.Action == "pass" or .Action == "fail"))] | length' "${RUNNER_TEMP}/results.json")"
+          echo "Tests run: ${ran}"
+          if [[ "${ran}" -eq 0 ]]; then
+            echo "::error::No agents acceptance tests matched."
+            exit 1
+          fi
+
+      - name: Report status
+        if: always() && steps.commit.outputs.sha != ''
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+          OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          set -euo pipefail
+          case "${OUTCOME}" in
+            success) state=success; desc="Agents acceptance tests passed" ;;
+            failure) state=failure; desc="Agents acceptance tests failed" ;;
+            *)       state=error;   desc="Agents acceptance tests did not complete (${OUTCOME})" ;;
+          esac
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state="${state}" -f context="${STATUS_CONTEXT}" \
+            -f target_url="${RUN_URL}" -f description="${desc}"
