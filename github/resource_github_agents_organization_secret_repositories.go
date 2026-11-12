@@ -46,17 +46,24 @@ func resourceGithubAgentsOrganizationSecretRepositoriesCreate(ctx context.Contex
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
+	client := meta.v3client
+	owner := meta.name
+
+	name, _ := d.Get("secret_name").(string)
+
 	ids := []int64{}
 	selectedIDs, _ := d.Get("selected_repository_ids").(*schema.Set)
 	for _, id := range selectedIDs.List() {
 		repoID, _ := id.(int)
 		ids = append(ids, int64(repoID))
 	}
-	name, _ := d.Get("secret_name").(string)
-	if _, err := meta.v3client.Agents.SetSelectedReposForOrgSecret(ctx, meta.name, name, ids); err != nil {
+
+	if _, err := client.Agents.SetSelectedReposForOrgSecret(ctx, owner, name, ids); err != nil {
 		return diag.FromErr(err)
 	}
+
 	d.SetId(name)
+
 	return nil
 }
 
@@ -65,16 +72,22 @@ func resourceGithubAgentsOrganizationSecretRepositoriesUpdate(ctx context.Contex
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
+	client := meta.v3client
+	owner := meta.name
+
+	name, _ := d.Get("secret_name").(string)
+
 	ids := []int64{}
 	selectedIDs, _ := d.Get("selected_repository_ids").(*schema.Set)
 	for _, id := range selectedIDs.List() {
 		repoID, _ := id.(int)
 		ids = append(ids, int64(repoID))
 	}
-	name, _ := d.Get("secret_name").(string)
-	if _, err := meta.v3client.Agents.SetSelectedReposForOrgSecret(ctx, meta.name, name, ids); err != nil {
+
+	if _, err := client.Agents.SetSelectedReposForOrgSecret(ctx, owner, name, ids); err != nil {
 		return diag.FromErr(err)
 	}
+
 	return nil
 }
 
@@ -83,9 +96,13 @@ func resourceGithubAgentsOrganizationSecretRepositoriesRead(ctx context.Context,
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
+
 	ids := []int64{}
-	for repo, err := range meta.v3client.Agents.ListSelectedReposForOrgSecretIter(ctx, meta.name, name, &github.ListOptions{PerPage: meta.maxPerPage}) {
+	for repo, err := range client.Agents.ListSelectedReposForOrgSecretIter(ctx, owner, name, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {
 			if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 				d.SetId("")
@@ -103,7 +120,11 @@ func resourceGithubAgentsOrganizationSecretRepositoriesDelete(ctx context.Contex
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
+	client := meta.v3client
+	owner := meta.name
+
 	name, _ := d.Get("secret_name").(string)
-	_, err := meta.v3client.Agents.SetSelectedReposForOrgSecret(ctx, meta.name, name, []int64{})
+
+	_, err := client.Agents.SetSelectedReposForOrgSecret(ctx, owner, name, []int64{})
 	return diag.FromErr(agentSecretAccessDeleteError(ctx, meta, name, err))
 }

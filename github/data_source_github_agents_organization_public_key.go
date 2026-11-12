@@ -31,7 +31,10 @@ func dataSourceGithubAgentsOrganizationPublicKeyRead(ctx context.Context, d *sch
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
-	key, _, err := meta.v3client.Agents.GetOrgPublicKey(ctx, meta.name)
+	client := meta.v3client
+	owner := meta.name
+
+	key, _, err := client.Agents.GetOrgPublicKey(ctx, owner)
 	if err != nil {
 		return diag.FromErr(err)
 	}

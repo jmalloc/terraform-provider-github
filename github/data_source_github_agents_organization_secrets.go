@@ -51,13 +51,16 @@ func dataSourceGithubAgentsOrganizationSecretsRead(ctx context.Context, d *schem
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
+	client := meta.v3client
+	owner := meta.name
+
 	secrets := []map[string]string{}
-	for secret, err := range meta.v3client.Agents.ListOrgSecretsIter(ctx, meta.name, &github.ListOptions{PerPage: meta.maxPerPage}) {
+	for secret, err := range client.Agents.ListOrgSecretsIter(ctx, owner, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {
 			return diag.FromErr(err)
 		}
 		secrets = append(secrets, map[string]string{"name": secret.Name, "visibility": secret.Visibility, "created_at": secret.CreatedAt.String(), "updated_at": secret.UpdatedAt.String()})
 	}
-	d.SetId(meta.name)
+	d.SetId(owner)
 	return diag.FromErr(d.Set("secrets", secrets))
 }
