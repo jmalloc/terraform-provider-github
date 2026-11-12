@@ -33,7 +33,9 @@ func dataSourceGithubAgentsPublicKey() *schema.Resource {
 
 func dataSourceGithubAgentsPublicKeyRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
+
 	repository, _ := d.Get("repository").(string)
+
 	key, _, err := meta.v3client.Agents.GetRepoPublicKey(ctx, meta.name, repository)
 	if err != nil {
 		return diag.FromErr(err)

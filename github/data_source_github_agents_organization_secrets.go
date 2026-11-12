@@ -51,6 +51,7 @@ func dataSourceGithubAgentsOrganizationSecretsRead(ctx context.Context, d *schem
 	if ok, diags := checkOrganizationOK(meta); !ok {
 		return diags
 	}
+
 	secrets := []map[string]string{}
 	for secret, err := range meta.v3client.Agents.ListOrgSecretsIter(ctx, meta.name, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {

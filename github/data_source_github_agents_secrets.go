@@ -56,6 +56,7 @@ func dataSourceGithubAgentsSecrets() *schema.Resource {
 func dataSourceGithubAgentsSecretsRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	meta, _ := m.(*Owner)
 	owner := meta.name
+
 	repository, _ := d.Get("name").(string)
 	if fullName, ok := d.GetOk("full_name"); ok {
 		var err error
