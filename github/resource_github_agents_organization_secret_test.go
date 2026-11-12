@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v92/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -154,75 +153,395 @@ func TestAgentsOrganizationSecretRotationAccessError(t *testing.T) {
 
 func TestAccGithubAgentsOrganizationSecret(t *testing.T) {
 	t.Parallel()
+
 	skipUnlessHasOrgs(t)
 
-	for _, encrypted := range []bool{false, true} {
-		t.Run(fmt.Sprintf("encrypted_%t", encrypted), func(t *testing.T) {
-			t.Parallel()
-			name := strings.ToUpper(strings.ReplaceAll(testResourcePrefix, "-", "_") + acctest.RandString(testRandomIDLength))
-			key, _, err := testAccConf.meta.v3client.Agents.GetOrgPublicKey(t.Context(), testAccConf.meta.name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			config := func(value, visibility string) string {
-				attribute := fmt.Sprintf("value = %q", value)
-				if encrypted {
-					ciphertext, err := encryptPlaintext(value, key.GetKey())
-					if err != nil {
-						t.Fatal(err)
-					}
-					attribute = fmt.Sprintf("key_id = %q\nvalue_encrypted = %q", key.GetKeyID(), base64.StdEncoding.EncodeToString(ciphertext))
-				}
-				return fmt.Sprintf(`
+	t.Run("with_value", func(t *testing.T) {
+		t.Parallel()
+
+		key := mustGetOrganizationAgentsPublicKey(t)
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
 resource "github_agents_organization_secret" "test" {
-  secret_name = %q
-  visibility = %q
-  %s
+  secret_name = "%s"
+  value       = "%%s"
+  visibility  = "all"
 }
+
 data "github_agents_organization_public_key" "test" {}
-data "github_agents_organization_secrets" "test" { depends_on = [github_agents_organization_secret.test] }
+
+data "github_agents_organization_secrets" "test" {
+  depends_on = [github_agents_organization_secret.test]
+}
+
 output "test_secret_metadata" {
   value = [for secret in data.github_agents_organization_secrets.test.secrets : secret if secret.name == github_agents_organization_secret.test.secret_name]
 }
-`, name, visibility, attribute)
-			}
-			initial := config("initial", "all")
-			selected := config("rotated", "selected")
-			ignored := strings.Replace(selected, "  secret_name =", "  lifecycle { ignore_changes = [updated_at] }\n  secret_name =", 1)
-			writeExternally := func() {
-				time.Sleep(time.Second)
-				ciphertext, err := encryptPlaintext("external", key.GetKey())
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, err = testAccConf.meta.v3client.Agents.CreateOrUpdateOrgSecret(t.Context(), testAccConf.meta.name, name, github.SecretOrgRequest{KeyID: key.GetKeyID(), EncryptedValue: base64.StdEncoding.EncodeToString(ciphertext), Visibility: "selected"})
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			ignore := "value"
-			if encrypted {
-				ignore = "value_encrypted"
-			}
-			resource.Test(t, resource.TestCase{
-				ProviderFactories: providerFactories,
-				Steps: []resource.TestStep{
-					{Config: initial, ConfigStateChecks: []statecheck.StateCheck{
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(config, "super_secret_value"),
+					ConfigStateChecks: []statecheck.StateCheck{
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("key_id"), knownvalue.StringExact(key.GetKeyID())),
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("created_at"), knownvalue.NotNull()),
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("updated_at"), knownvalue.NotNull()),
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("remote_updated_at"), knownvalue.NotNull()),
 						statecheck.ExpectKnownValue("data.github_agents_organization_public_key.test", tfjsonpath.New("key"), knownvalue.StringExact(key.GetKey())),
 						statecheck.ExpectKnownOutputValue("test_secret_metadata", knownvalue.ListExact([]knownvalue.Check{
-							knownvalue.MapExact(map[string]knownvalue.Check{"name": knownvalue.StringExact(name), "visibility": knownvalue.StringExact("all"), "created_at": knownvalue.NotNull(), "updated_at": knownvalue.NotNull()}),
+							knownvalue.MapExact(map[string]knownvalue.Check{
+								"name":       knownvalue.StringExact(secretName),
+								"visibility": knownvalue.StringExact("all"),
+								"created_at": knownvalue.NotNull(),
+								"updated_at": knownvalue.NotNull(),
+							}),
 						})),
-						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("created_at"), knownvalue.NotNull()),
-					}},
-					{ResourceName: "github_agents_organization_secret.test", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"key_id", ignore}},
-					{Config: initial, PlanOnly: true},
-					{Config: config("rotated", "private"), ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate)}}},
-					{Config: selected},
-					{PreConfig: writeExternally, Config: selected, ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate)}}},
-					{Config: ignored},
-					{PreConfig: writeExternally, Config: ignored, ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionNoop)}}},
+					},
 				},
-			})
+				{
+					Config: fmt.Sprintf(config, "super_secret_value_2"),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate),
+						},
+					},
+				},
+				{
+					ResourceName:            "github_agents_organization_secret.test",
+					ImportState:             true,
+					ImportStateVerify:       true,
+					ImportStateVerifyIgnore: []string{"key_id", "value"},
+				},
+			},
 		})
-	}
+	})
+
+	t.Run("with_value_encrypted", func(t *testing.T) {
+		t.Parallel()
+
+		key := mustGetOrganizationAgentsPublicKey(t)
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name     = "%s"
+  key_id          = "%s"
+  value_encrypted = "%%s"
+  visibility      = "all"
+}
+`, secretName, key.GetKeyID())
+
+		encrypt := func(value string) string {
+			encryptedBytes, err := encryptPlaintext(value, key.GetKey())
+			if err != nil {
+				t.Fatalf("failed to encrypt plaintext: %v", err)
+			}
+			return base64.StdEncoding.EncodeToString(encryptedBytes)
+		}
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(config, encrypt("super_secret_value")),
+					ConfigStateChecks: []statecheck.StateCheck{
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("created_at"), knownvalue.NotNull()),
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("updated_at"), knownvalue.NotNull()),
+						statecheck.ExpectKnownValue("github_agents_organization_secret.test", tfjsonpath.New("remote_updated_at"), knownvalue.NotNull()),
+					},
+				},
+				{
+					Config: fmt.Sprintf(config, encrypt("super_secret_value_2")),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate),
+						},
+					},
+				},
+				{
+					ResourceName:            "github_agents_organization_secret.test",
+					ImportState:             true,
+					ImportStateVerify:       true,
+					ImportStateVerifyIgnore: []string{"key_id", "value_encrypted"},
+				},
+			},
+		})
+	})
+
+	t.Run("with_visibility_all", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "all"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+			},
+		})
+	})
+
+	t.Run("with_visibility_private", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "private"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+			},
+		})
+	})
+
+	t.Run("with_visibility_selected", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "selected"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+			},
+		})
+	})
+
+	t.Run("can_change_visibility", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "%%v"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(config, "all"),
+				},
+				{
+					Config: fmt.Sprintf(config, "private"),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate),
+						},
+					},
+				},
+				{
+					Config: fmt.Sprintf(config, "selected"),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate),
+						},
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("updates_on_drift", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "all"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+				{
+					PreConfig: func() {
+						// GitHub records a secret's updated_at to the second. Wait one second so that
+						// this write gets a later updated_at than the one in state, or the provider
+						// can't see the change.
+						time.Sleep(time.Second)
+						mustUpdateOrganizationAgentsSecret(t, secretName, "super_secret_value_2")
+					},
+					Config: config,
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate),
+						},
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("updates_on_drift_with_visibility_selected", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "selected"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+				{
+					PreConfig: func() {
+						// GitHub records a secret's updated_at to the second. Wait one second so that
+						// this write gets a later updated_at than the one in state, or the provider
+						// can't see the change.
+						time.Sleep(time.Second)
+						mustUpdateOrganizationAgentsSecret(t, secretName, "super_secret_value_2")
+					},
+					Config: config,
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionUpdate),
+						},
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("lifecycle_ignore_suppresses_drift", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "all"
+
+  lifecycle {
+    ignore_changes = [updated_at]
+  }
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+				{
+					PreConfig: func() {
+						// GitHub records a secret's updated_at to the second. Wait one second so that
+						// this write gets a later updated_at than the one in state, or the provider
+						// can't see the change.
+						time.Sleep(time.Second)
+						mustUpdateOrganizationAgentsSecret(t, secretName, "super_secret_value_2")
+					},
+					Config: config,
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionNoop),
+						},
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("recreates_when_deleted_externally", func(t *testing.T) {
+		t.Parallel()
+
+		randomID := acctest.RandString(testRandomIDLength)
+		secretName := strings.ToUpper(fmt.Sprintf("%s%s", strings.ReplaceAll(testResourcePrefix, "-", "_"), randomID))
+
+		config := fmt.Sprintf(`
+resource "github_agents_organization_secret" "test" {
+  secret_name = "%s"
+  value       = "super_secret_value"
+  visibility  = "all"
+}
+`, secretName)
+
+		resource.Test(t, resource.TestCase{
+			ProviderFactories: providerFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: config,
+				},
+				{
+					PreConfig: func() {
+						if _, err := testAccConf.meta.v3client.Agents.DeleteOrgSecret(t.Context(), testAccConf.meta.name, secretName); err != nil {
+							t.Fatalf("failed to delete test organization agents secret: %v", err)
+						}
+					},
+					Config: config,
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("github_agents_organization_secret.test", plancheck.ResourceActionCreate),
+						},
+					},
+				},
+			},
+		})
+	})
 }
