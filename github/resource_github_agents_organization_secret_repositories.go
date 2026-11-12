@@ -13,9 +13,9 @@ import (
 
 func resourceGithubAgentsOrganizationSecretRepositories() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceGithubAgentsOrganizationSecretRepositoriesCreateOrUpdate,
+		CreateContext: resourceGithubAgentsOrganizationSecretRepositoriesCreate,
 		ReadContext:   resourceGithubAgentsOrganizationSecretRepositoriesRead,
-		UpdateContext: resourceGithubAgentsOrganizationSecretRepositoriesCreateOrUpdate,
+		UpdateContext: resourceGithubAgentsOrganizationSecretRepositoriesUpdate,
 		DeleteContext: resourceGithubAgentsOrganizationSecretRepositoriesDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsOrganizationSecretImport},
 		Description:   "Manages the complete set of repositories with access to an organization agent secret. Requires selected visibility.",
@@ -41,7 +41,7 @@ func resourceGithubAgentsOrganizationSecretRepositories() *schema.Resource {
 	}
 }
 
-func resourceGithubAgentsOrganizationSecretRepositoriesCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func resourceGithubAgentsOrganizationSecretRepositoriesCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	if err := checkOrganization(m); err != nil {
 		return diag.FromErr(err)
 	}
@@ -57,6 +57,24 @@ func resourceGithubAgentsOrganizationSecretRepositoriesCreateOrUpdate(ctx contex
 		return diag.FromErr(err)
 	}
 	d.SetId(name)
+	return nil
+}
+
+func resourceGithubAgentsOrganizationSecretRepositoriesUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+	if err := checkOrganization(m); err != nil {
+		return diag.FromErr(err)
+	}
+	meta, _ := m.(*Owner)
+	ids := []int64{}
+	selectedIDs, _ := d.Get("selected_repository_ids").(*schema.Set)
+	for _, id := range selectedIDs.List() {
+		repoID, _ := id.(int)
+		ids = append(ids, int64(repoID))
+	}
+	name, _ := d.Get("secret_name").(string)
+	if _, err := meta.v3client.Agents.SetSelectedReposForOrgSecret(ctx, meta.name, name, ids); err != nil {
+		return diag.FromErr(err)
+	}
 	return nil
 }
 
