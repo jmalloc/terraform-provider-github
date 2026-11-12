@@ -21,7 +21,7 @@ func resourceGithubAgentsSecret() *schema.Resource {
 		DeleteContext: resourceGithubAgentsSecretDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsSecretImport},
 		CustomizeDiff: customdiff.All(diffRepository, diffSecret),
-		Description:   "Manages an agent secret for a GitHub repository.",
+		Description:   "Resource to manage an agent secret for a GitHub repository.",
 		Schema: map[string]*schema.Schema{
 			"repository": {
 				Type:        schema.TypeString,

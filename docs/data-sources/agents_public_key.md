@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_public_key (Data Source) - GitHub"
 description: |-
-  Retrieves the public key used to encrypt a repository's agent secrets.
+  Data source to retrieve the public key used to encrypt a repository's agent secrets.
 ---
 
 # github_agents_public_key (Data Source)
 
-Retrieves the public key used to encrypt a repository's agent secrets.
+Data source to retrieve the public key used to encrypt a repository's agent secrets.
 
 Requires repository **Agent secrets: read** permission for fine-grained tokens or GitHub Apps. Use this key for agent secrets, not Actions secrets.
 

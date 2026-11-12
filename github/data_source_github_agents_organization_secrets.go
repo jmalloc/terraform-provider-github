@@ -11,7 +11,7 @@ import (
 func dataSourceGithubAgentsOrganizationSecrets() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceGithubAgentsOrganizationSecretsRead,
-		Description: "Lists organization agent secret metadata without revealing secret values.",
+		Description: "Data source to list organization agent secret metadata without revealing secret values.",
 		Schema: map[string]*schema.Schema{
 			"secrets": {
 				Type:        schema.TypeList,

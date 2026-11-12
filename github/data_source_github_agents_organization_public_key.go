@@ -10,7 +10,7 @@ import (
 func dataSourceGithubAgentsOrganizationPublicKey() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceGithubAgentsOrganizationPublicKeyRead,
-		Description: "Retrieves the public key used to encrypt an organization's agent secrets.",
+		Description: "Data source to retrieve the public key used to encrypt an organization's agent secrets.",
 		Schema: map[string]*schema.Schema{
 			"key_id": {
 				Type:        schema.TypeString,

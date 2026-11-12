@@ -18,7 +18,7 @@ func resourceGithubAgentsOrganizationSecretRepository() *schema.Resource {
 		ReadContext:   resourceGithubAgentsOrganizationSecretRepositoryRead,
 		DeleteContext: resourceGithubAgentsOrganizationSecretRepositoryDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsOrganizationSecretRepositoryImport},
-		Description:   "Manages one repository's access to an organization agent secret. Requires selected visibility.",
+		Description:   "Resource to manage one repository's access to an organization agent secret. Requires selected visibility.",
 		Schema: map[string]*schema.Schema{
 			"secret_name": {
 				Type:             schema.TypeString,

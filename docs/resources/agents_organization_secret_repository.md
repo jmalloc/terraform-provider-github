@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_organization_secret_repository (Resource) - GitHub"
 description: |-
-  Manages one repository's access to an organization agent secret. Requires selected visibility.
+  Resource to manage one repository's access to an organization agent secret. Requires selected visibility.
 ---
 
 # github_agents_organization_secret_repository (Resource)
 
-Manages one repository's access to an organization agent secret. Requires selected visibility.
+Resource to manage one repository's access to an organization agent secret. Requires selected visibility.
 
 Requires organization **Agent secrets: write** permission and access to the selected repository. The existing secret must have `visibility = "selected"`.
 

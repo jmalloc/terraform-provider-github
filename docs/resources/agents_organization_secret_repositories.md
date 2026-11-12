@@ -1,12 +1,12 @@
 ---
 page_title: "github_agents_organization_secret_repositories (Resource) - GitHub"
 description: |-
-  Manages the complete set of repositories with access to an organization agent secret. Requires selected visibility.
+  Resource to manage the complete set of repositories with access to an organization agent secret. Requires selected visibility.
 ---
 
 # github_agents_organization_secret_repositories (Resource)
 
-Manages the complete set of repositories with access to an organization agent secret. Requires selected visibility.
+Resource to manage the complete set of repositories with access to an organization agent secret. Requires selected visibility.
 
 Requires organization **Agent secrets: write** permission. The existing secret must have `visibility = "selected"`.
 
