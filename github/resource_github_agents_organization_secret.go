@@ -14,9 +14,9 @@ import (
 
 func resourceGithubAgentsOrganizationSecret() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceGithubAgentsOrganizationSecretCreateOrUpdate,
+		CreateContext: resourceGithubAgentsOrganizationSecretCreate,
 		ReadContext:   resourceGithubAgentsOrganizationSecretRead,
-		UpdateContext: resourceGithubAgentsOrganizationSecretCreateOrUpdate,
+		UpdateContext: resourceGithubAgentsOrganizationSecretUpdate,
 		DeleteContext: resourceGithubAgentsOrganizationSecretDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubAgentsOrganizationSecretImport},
 		CustomizeDiff: diffSecret,
@@ -86,7 +86,7 @@ func resourceGithubAgentsOrganizationSecret() *schema.Resource {
 	}
 }
 
-func resourceGithubAgentsOrganizationSecretCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func resourceGithubAgentsOrganizationSecretCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	if err := checkOrganization(m); err != nil {
 		return diag.FromErr(err)
 	}
@@ -98,7 +98,37 @@ func resourceGithubAgentsOrganizationSecretCreateOrUpdate(ctx context.Context, d
 	}
 	visibility, _ := d.Get("visibility").(string)
 	request := github.SecretOrgRequest{KeyID: value.KeyID, EncryptedValue: value.EncryptedValue, Visibility: visibility}
-	if d.Id() != "" && visibility == "selected" {
+	if _, err := meta.v3client.Agents.CreateOrUpdateOrgSecret(ctx, meta.name, name, request); err != nil {
+		return diag.FromErr(err)
+	}
+	d.SetId(name)
+	if err := d.Set("key_id", value.KeyID); err != nil {
+		return diag.FromErr(err)
+	}
+	// PUT returns no metadata, so fetch the timestamp baseline for drift detection.
+	secret, err := retryUntilResourceFound(ctx, func() (*github.Secret, error) {
+		secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
+		return secret, err
+	}, nil)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	return diag.FromErr(setAgentOrganizationSecretMetadata(ctx, d, meta, secret, true))
+}
+
+func resourceGithubAgentsOrganizationSecretUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+	if err := checkOrganization(m); err != nil {
+		return diag.FromErr(err)
+	}
+	meta, _ := m.(*Owner)
+	name, _ := d.Get("secret_name").(string)
+	value, err := agentSecretValue(ctx, d, meta, "")
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	visibility, _ := d.Get("visibility").(string)
+	request := github.SecretOrgRequest{KeyID: value.KeyID, EncryptedValue: value.EncryptedValue, Visibility: visibility}
+	if visibility == "selected" {
 		secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
 		if err != nil {
 			return diag.FromErr(err)
@@ -116,10 +146,10 @@ func resourceGithubAgentsOrganizationSecretCreateOrUpdate(ctx context.Context, d
 	if _, err := meta.v3client.Agents.CreateOrUpdateOrgSecret(ctx, meta.name, name, request); err != nil {
 		return diag.FromErr(err)
 	}
-	d.SetId(name)
 	if err := d.Set("key_id", value.KeyID); err != nil {
 		return diag.FromErr(err)
 	}
+	// PUT returns no metadata, so fetch the timestamp baseline for drift detection.
 	secret, err := retryUntilResourceFound(ctx, func() (*github.Secret, error) {
 		secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
 		return secret, err
