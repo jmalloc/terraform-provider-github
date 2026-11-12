@@ -7,6 +7,10 @@
 #
 # workflow_run always uses this file from the default branch, so it can test PR
 # branches without the workflow ever appearing on those branches.
+#
+# Only CI runs for pull requests trigger it. Stacked PR branches are named
+# release-v-agent-secrets-N-..., so CI also runs on pushes to them; those runs are
+# skipped here so that each commit is tested once.
 name: Fork - Agents Acceptance Tests
 
 on:
@@ -34,9 +38,10 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
        (startsWith(github.event.workflow_run.head_branch, 'conventions/') ||
-        github.event.workflow_run.head_branch == 'release-v-agent-secrets'))
+        startsWith(github.event.workflow_run.head_branch, 'release-v-agent-secrets-')))
     runs-on: ubuntu-latest
     permissions:
       contents: read
