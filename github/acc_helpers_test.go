@@ -566,3 +566,33 @@ func mustUpdateRepositoryDependabotSecret(t *testing.T, repo *github.Repository,
 		t.Fatalf("failed to update test repository dependabot secret: %v", err)
 	}
 }
+
+func mustGetRepositoryAgentsPublicKey(t *testing.T, repo *github.Repository) *github.PublicKey {
+	t.Helper()
+
+	publicKey, _, err := testAccConf.meta.v3client.Agents.GetRepoPublicKey(t.Context(), testAccConf.meta.name, repo.GetName())
+	if err != nil {
+		t.Fatalf("failed to get public key for test repository agents: %v", err)
+	}
+
+	return publicKey
+}
+
+func mustUpdateRepositoryAgentsSecret(t *testing.T, repo *github.Repository, name, value string) {
+	t.Helper()
+
+	publicKey := mustGetRepositoryAgentsPublicKey(t, repo)
+
+	encryptedBytes, err := encryptPlaintext(value, publicKey.GetKey())
+	if err != nil {
+		t.Fatalf("failed to encrypt plaintext for test repository agents secret: %v", err)
+	}
+	encryptedValue := base64.StdEncoding.EncodeToString(encryptedBytes)
+
+	if _, err := testAccConf.meta.v3client.Agents.CreateOrUpdateRepoSecret(t.Context(), testAccConf.meta.name, repo.GetName(), name, github.SecretRequest{
+		KeyID:          publicKey.GetKeyID(),
+		EncryptedValue: encryptedValue,
+	}); err != nil {
+		t.Fatalf("failed to update test repository agents secret: %v", err)
+	}
+}
