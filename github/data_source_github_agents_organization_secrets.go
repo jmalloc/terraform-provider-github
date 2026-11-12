@@ -47,10 +47,10 @@ func dataSourceGithubAgentsOrganizationSecrets() *schema.Resource {
 }
 
 func dataSourceGithubAgentsOrganizationSecretsRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	secrets := []map[string]string{}
 	for secret, err := range meta.v3client.Agents.ListOrgSecretsIter(ctx, meta.name, &github.ListOptions{PerPage: meta.maxPerPage}) {
 		if err != nil {

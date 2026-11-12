@@ -42,10 +42,10 @@ func resourceGithubAgentsOrganizationSecretRepositories() *schema.Resource {
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoriesCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	ids := []int64{}
 	selectedIDs, _ := d.Get("selected_repository_ids").(*schema.Set)
 	for _, id := range selectedIDs.List() {
@@ -61,10 +61,10 @@ func resourceGithubAgentsOrganizationSecretRepositoriesCreate(ctx context.Contex
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoriesUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	ids := []int64{}
 	selectedIDs, _ := d.Get("selected_repository_ids").(*schema.Set)
 	for _, id := range selectedIDs.List() {
@@ -79,10 +79,10 @@ func resourceGithubAgentsOrganizationSecretRepositoriesUpdate(ctx context.Contex
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoriesRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	name, _ := d.Get("secret_name").(string)
 	ids := []int64{}
 	for repo, err := range meta.v3client.Agents.ListSelectedReposForOrgSecretIter(ctx, meta.name, name, &github.ListOptions{PerPage: meta.maxPerPage}) {
@@ -99,10 +99,10 @@ func resourceGithubAgentsOrganizationSecretRepositoriesRead(ctx context.Context,
 }
 
 func resourceGithubAgentsOrganizationSecretRepositoriesDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	name, _ := d.Get("secret_name").(string)
 	_, err := meta.v3client.Agents.SetSelectedReposForOrgSecret(ctx, meta.name, name, []int64{})
 	return diag.FromErr(agentSecretAccessDeleteError(ctx, meta, name, err))

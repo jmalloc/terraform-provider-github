@@ -87,10 +87,10 @@ func resourceGithubAgentsOrganizationSecret() *schema.Resource {
 }
 
 func resourceGithubAgentsOrganizationSecretCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	name, _ := d.Get("secret_name").(string)
 	value, err := agentSecretValue(ctx, d, meta, "")
 	if err != nil {
@@ -117,10 +117,10 @@ func resourceGithubAgentsOrganizationSecretCreate(ctx context.Context, d *schema
 }
 
 func resourceGithubAgentsOrganizationSecretUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	name, _ := d.Get("secret_name").(string)
 	value, err := agentSecretValue(ctx, d, meta, "")
 	if err != nil {
@@ -161,10 +161,10 @@ func resourceGithubAgentsOrganizationSecretUpdate(ctx context.Context, d *schema
 }
 
 func resourceGithubAgentsOrganizationSecretRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	name, _ := d.Get("secret_name").(string)
 	secret, _, err := meta.v3client.Agents.GetOrgSecret(ctx, meta.name, name)
 	if err != nil {
@@ -217,10 +217,10 @@ func agentOrganizationSecretRepositoryIDs(ctx context.Context, meta *Owner, name
 }
 
 func resourceGithubAgentsOrganizationSecretDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	if err := checkOrganization(m); err != nil {
-		return diag.FromErr(err)
-	}
 	meta, _ := m.(*Owner)
+	if ok, diags := checkOrganizationOK(meta); !ok {
+		return diags
+	}
 	name, _ := d.Get("secret_name").(string)
 	_, err := meta.v3client.Agents.DeleteOrgSecret(ctx, meta.name, name)
 	if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
